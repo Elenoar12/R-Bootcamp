@@ -9,7 +9,7 @@ library(ggplot2)
 # Load and prepare data
 load_data <- function() {
   # Burglary data canton ZH
-  ebd_raw <- read.csv("../Data/KTZH_EBD.csv")
+  ebd_raw <- read.csv("Data/KTZH_EBD.csv")
 
   # Full ebd for visualization functions (all Tatbestand types)
   ebd_viz <- ebd_raw %>%
@@ -22,7 +22,7 @@ load_data <- function() {
     filter(Tatbestand == 'Einbrüche insgesamt')
 
   # Income data on municipality level
-  income_kt <- read.csv("../Data/KTZH_Income_median.csv")
+  income_kt <- read.csv("Data/KTZH_Income_median.csv")
 
   # Remove non-municipality and city data and unused columns
   income_kt <- income_kt %>%
@@ -31,7 +31,7 @@ load_data <- function() {
     rename(INCOME_VALUE = INDIKATOR_VALUE)
 
   # Income data on city district level
-  income_st <- read.csv("../Data/STZH_Income_median.csv")
+  income_st <- read.csv("Data/STZH_Income_median.csv")
 
   income_st <- income_st %>%
     filter(SteuerTarifLang == "Grundtarif") %>%
@@ -133,7 +133,7 @@ load_data <- function() {
     select(-INCOME_VALUE_ST)
 
   # Read .gpkg of municipalities
-  ktzh_gpkg <- st_read("../Data/KTZH_Gemeindegrenzen_OGD.gpkg",
+  ktzh_gpkg <- st_read("Data/KTZH_Gemeindegrenzen_OGD.gpkg",
                        layer = "UP_GEMEINDEN_SEEN_F", quiet = TRUE)
 
   # Remove non-municipality and city geoms
@@ -142,7 +142,7 @@ load_data <- function() {
     select(BFS, geom)
 
   # Read .gpkg of swiss borders (swisstopo)
-  swiss_borders <- st_read("../Data/CH_Borders_swisstopo.gpkg",
+  swiss_borders <- st_read("Data/CH_Borders_swisstopo.gpkg",
                            layer = "tlm_landesgebiet", quiet = TRUE)
 
   swiss_borders <- swiss_borders %>%
@@ -164,11 +164,11 @@ load_data <- function() {
     select(BFS, geom, distance_to_border, distance_to_border_km)
 
   # Convert city district .gpkg CURVEPOLYGON TO MULTIPOLYGON
-  if (!file.exists("../Data/STZH_lin.gpkg")) {
+  if (!file.exists("Data/STZH_lin.gpkg")) {
     gdal_utils(
       util = "vectortranslate",
-      source = "../Data/STZH_Stadtkreise_OGD.gpkg",
-      destination = "../Data/STZH_lin.gpkg",
+      source = "Data/STZH_Stadtkreise_OGD.gpkg",
+      destination = "Data/STZH_lin.gpkg",
       options = c("-nlt", "MULTIPOLYGON",
                   "-lco", "GEOMETRY_NAME=geom",
                   "-overwrite")
@@ -176,7 +176,7 @@ load_data <- function() {
   }
 
   # Read the converted file
-  stzh_gpkg <- st_read("../Data/STZH_lin.gpkg", quiet = TRUE)
+  stzh_gpkg <- st_read("Data/STZH_lin.gpkg", quiet = TRUE)
 
   stzh_geom <- stzh_gpkg %>%
     select(kname, geom) %>%
