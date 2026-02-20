@@ -496,7 +496,9 @@ ui <- fluidPage(
                                 burglary rates, as wealthier areas may present more attractive targets."),
                         tags$li(strong("H2 — Border proximity:"), "Municipalities located closer to national borders
                                 experience higher burglary rates, potentially due to easier escape routes across
-                                international boundaries.")
+                                international boundaries."),
+                        tags$li(strong("H3 — Combined effect:"), "Income and border proximity jointly predict
+                                burglary rates better than either variable alone.")
                       ),
 
                       h3("Notable Features"),
