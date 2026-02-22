@@ -267,12 +267,12 @@ plot_burglary_lines <- function(data, municipality, stadtkreis = NULL) {
     )
 }
 
-plot_income <- function(kt_data, st_data, municipality, stadtkreis = NULL) {
+plot_income <- function(kt_data, st_data, municipality, stadtkreis = NULL, bfs = NULL) {
   if (!is.null(stadtkreis)) {
     df <- st_data %>% filter(KreisLang == stadtkreis) %>% rename(INDIKATOR_JAHR = StichtagDatJahr)
     title_label <- paste0(municipality, " - ", stadtkreis)
   } else {
-    df <- kt_data %>% filter(GEBIET_NAME == municipality)
+    df <- if (!is.null(bfs)) kt_data %>% filter(BFS_NR == bfs) else kt_data %>% filter(GEBIET_NAME == municipality)
     title_label <- municipality
   }
   ggplot(df, aes(x = INDIKATOR_JAHR, y = INCOME_VALUE)) +
@@ -286,10 +286,10 @@ plot_income <- function(kt_data, st_data, municipality, stadtkreis = NULL) {
     )
 }
 
-plot_income_merged <- function(kt_data, kt_raw, mergers, municipality) {
-  new_bfs <- kt_data %>% filter(GEBIET_NAME == municipality) %>% pull(BFS_NR) %>% first()
+plot_income_merged <- function(kt_data, kt_raw, mergers, municipality, bfs = NULL) {
+  new_bfs <- if (!is.null(bfs)) bfs else kt_data %>% filter(GEBIET_NAME == municipality) %>% pull(BFS_NR) %>% first()
   merger_info <- mergers %>% filter(new_BFS_Nr == new_bfs)
-  if (nrow(merger_info) == 0) return(plot_income(kt_data, NULL, municipality))
+  if (nrow(merger_info) == 0) return(plot_income(kt_data, NULL, municipality, bfs = bfs))
   merge_year <- merger_info$merge_year[1]
   old_bfs_nrs <- merger_info$old_BFS_Nr
   old_data <- kt_raw %>% filter(BFS_NR %in% old_bfs_nrs, INDIKATOR_JAHR < merge_year) %>%
@@ -688,14 +688,16 @@ server <- function(input, output, session) {
   # Helper: resolve municipality name and stadtkreis from BFS number
   loc_info <- reactive({
     req(input$selected_location)
+    bfs_num <- as.integer(input$selected_location)
     info <- data %>%
       st_drop_geometry() %>%
-      filter(Gemeinde_BFS_Nr == as.integer(input$selected_location)) %>%
+      filter(Gemeinde_BFS_Nr == bfs_num) %>%
       slice(1)
     list(
       municipality = info$Gemeindename,
       stadtkreis   = if (!is.na(info$Stadtkreis_Name) && info$Stadtkreis_Name != "") info$Stadtkreis_Name else NULL,
-      is_merged    = as.integer(input$selected_location) %in% merger_mapping$new_BFS_Nr
+      is_merged    = bfs_num %in% merger_mapping$new_BFS_Nr,
+      bfs          = bfs_num
     )
   })
 
@@ -736,16 +738,29 @@ server <- function(input, output, session) {
              " since ", pop_rows$Ausgangsjahr[1], ")")
     } else fmt(pop_rows$Einwohner[1])
 
-    # Median income change (first to last year with data)
-    inc_rows <- location_rows %>% filter(!is.na(INCOME_VALUE))
-    inc_html <- if (nrow(inc_rows) >= 2) {
-      i1 <- inc_rows$INCOME_VALUE[1]
-      il <- inc_rows$INCOME_VALUE[nrow(inc_rows)]
+    # Median income change using full income history (from 1999)
+    is_stadtkreis <- !is.na(location_first$Stadtkreis_Name) & location_first$Stadtkreis_Name != ""
+    inc_rows_full <- if (is_stadtkreis) {
+      income_st_viz %>%
+        filter(KreisLang == location_first$Stadtkreis_Name) %>%
+        arrange(StichtagDatJahr) %>%
+        filter(!is.na(INCOME_VALUE)) %>%
+        rename(INDIKATOR_JAHR = StichtagDatJahr)
+    } else {
+      income_kt_viz %>%
+        filter(BFS_NR == bfs_selected) %>%
+        arrange(INDIKATOR_JAHR) %>%
+        filter(!is.na(INCOME_VALUE))
+    }
+    inc_html <- if (nrow(inc_rows_full) >= 2) {
+      i1 <- inc_rows_full$INCOME_VALUE[1]
+      il <- inc_rows_full$INCOME_VALUE[nrow(inc_rows_full)]
+      yr1 <- inc_rows_full$INDIKATOR_JAHR[1]
       chg <- il - i1
       paste0("CHF ", fmt(il), " (", signed(chg), ", ", sprintf("%+.1f%%", (chg / i1) * 100),
-             " since ", inc_rows$Ausgangsjahr[1], ")")
-    } else if (nrow(inc_rows) == 1) {
-      paste0("CHF ", fmt(inc_rows$INCOME_VALUE[1]))
+             " since ", yr1, ")")
+    } else if (nrow(inc_rows_full) == 1) {
+      paste0("CHF ", fmt(inc_rows_full$INCOME_VALUE[1]))
     } else "N/A"
 
     # Total burglaries across all years
@@ -772,7 +787,7 @@ server <- function(input, output, session) {
       "<strong>BFS Number:</strong> ", bfs_selected, "<br/>",
       "<strong>Distance to Border:</strong> ", distance_km, " km<br/>",
       "<strong>Population (", yr_max, "):</strong> ", pop_html, "<br/>",
-      "<strong>Median Income (", if (nrow(inc_rows) >= 1) max(inc_rows$Ausgangsjahr) else yr_max, "):</strong> ", inc_html, "<br/>",
+      "<strong>Median Income (", if (nrow(inc_rows_full) >= 1) max(inc_rows_full$INDIKATOR_JAHR) else yr_max, "):</strong> ", inc_html, "<br/>",
       "<strong>Total Burglaries (", yr_min, "\u2013", yr_max, "):</strong> ", fmt(total_ebd),
       merger_html
     ))
@@ -793,9 +808,9 @@ server <- function(input, output, session) {
     req(loc_info())
     loc <- loc_info()
     if (loc$is_merged && is.null(loc$stadtkreis)) {
-      plot_income_merged(income_kt_viz, income_kt_raw, merger_mapping, loc$municipality)
+      plot_income_merged(income_kt_viz, income_kt_raw, merger_mapping, loc$municipality, bfs = loc$bfs)
     } else {
-      plot_income(income_kt_viz, income_st_viz, loc$municipality, loc$stadtkreis)
+      plot_income(income_kt_viz, income_st_viz, loc$municipality, loc$stadtkreis, bfs = loc$bfs)
     }
   }, height = function() {
     h <- session$clientData$output_income_plot_height
